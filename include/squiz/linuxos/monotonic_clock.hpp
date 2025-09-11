@@ -9,7 +9,6 @@
 #include <chrono>
 #include <cstdint>
 #include <limits>
-#include <numeric>
 
 #include <squiz/detail/integer_ops.hpp>
 

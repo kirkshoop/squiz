@@ -6,6 +6,7 @@
 #include <squiz/linuxos/detail/file_handle.hpp>
 
 #include <cassert>
+#include <cerrno>
 
 #include <unistd.h>
 

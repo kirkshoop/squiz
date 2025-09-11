@@ -6,6 +6,9 @@
 #pragma once
 
 #include <bit>
+#include <array>
+#include <limits>
+#include <cstdint>
 
 namespace squiz::detail {
 
