@@ -13,12 +13,10 @@
 #include <chrono>
 #include <cstdint>
 #include <iterator>
-#include <limits>
 #include <optional>
 #include <system_error>
 
 #include <linux/time_types.h>  // for __kernel_timespec
-#include <time.h>              // for clockid_t
 
 struct io_uring_sqe;
 struct io_uring_cqe;
@@ -410,10 +408,10 @@ private:
   std::uint32_t sqe_tail_;
   io_uring_sqe* sq_entries_;
   std::uint32_t* sq_index_array_;
-  volatile const std::uint32_t* sq_head_;
+  std::uint32_t* sq_head_;
   std::uint32_t* sq_tail_;
-  volatile std::uint32_t* sq_flags_;
-  volatile std::uint32_t* sq_dropped_;
+  std::uint32_t* sq_flags_;
+  std::uint32_t* sq_dropped_;
 
   // completion-queue fields
 
@@ -421,8 +419,8 @@ private:
   std::uint32_t cq_mask_;
   volatile io_uring_cqe* cq_entries_;
   std::uint32_t* cq_head_;
-  const volatile std::uint32_t* cq_tail_;
-  const volatile std::uint32_t* cq_overflow_;
+  std::uint32_t* cq_tail_;
+  std::uint32_t* cq_overflow_;
 };
 
 struct io_uring::setup_args {

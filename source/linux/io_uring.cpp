@@ -336,18 +336,18 @@ bool io_uring::supports_completion_queue_nodrop() const noexcept {
 
 std::uint32_t io_uring::submission_queue_unsubmitted() const noexcept {
   std::uint32_t tail = sqe_tail_;
-  std::atomic_ref<const volatile std::uint32_t> head_ref{*sq_head_};
-  std::uint32_t head = head_ref.load(std::memory_order_acquire);
+  std::atomic_ref<std::uint32_t> head_ref{*sq_head_};
+  volatile std::uint32_t head = head_ref.load(std::memory_order_acquire);
   return tail - head;
 }
 
 std::uint32_t io_uring::submission_queue_dropped() const noexcept {
-  std::atomic_ref<const volatile std::uint32_t> dropped_ref{*sq_dropped_};
+  std::atomic_ref<std::uint32_t> dropped_ref{*sq_dropped_};
   return dropped_ref.load(std::memory_order_relaxed);
 }
 
 std::uint32_t io_uring::submission_queue_tail_limit() const noexcept {
-  std::atomic_ref<const volatile std::uint32_t> head_ref{*sq_head_};
+  std::atomic_ref<std::uint32_t> head_ref{*sq_head_};
   std::uint32_t head = head_ref.load(std::memory_order_acquire);
   return head + sq_entry_count_;
 }
@@ -379,7 +379,7 @@ std::uint32_t io_uring::flush_submission_queue() noexcept {
     }
   }
 
-  std::atomic_ref<const volatile std::uint32_t> head_ref{*sq_head_};
+  std::atomic_ref<std::uint32_t> head_ref{*sq_head_};
   std::uint32_t head = head_ref.load(std::memory_order_acquire);
 
   LOG("Updated submission queue to (head=%u, tail=%u)", head, tail);
@@ -389,13 +389,13 @@ std::uint32_t io_uring::flush_submission_queue() noexcept {
 
 std::uint32_t io_uring::completion_queue_available() const noexcept {
   std::uint32_t head = *cq_head_;
-  std::atomic_ref<const volatile std::uint32_t> tail_ref{*cq_tail_};
+  std::atomic_ref<std::uint32_t> tail_ref{*cq_tail_};
   std::uint32_t tail = tail_ref.load(std::memory_order_acquire);
   return tail - head;
 }
 
 std::uint32_t io_uring::completion_queue_overflow() const noexcept {
-  std::atomic_ref<const volatile std::uint32_t> overflow_ref{*cq_overflow_};
+  std::atomic_ref<std::uint32_t> overflow_ref{*cq_overflow_};
   return overflow_ref.load(std::memory_order_relaxed);
 }
 
@@ -422,7 +422,7 @@ io_uring::get_completion_entries() const noexcept {
   result.mask_ = cq_mask_;
   result.head_ = *cq_head_;
 
-  std::atomic_ref<const volatile std::uint32_t> tail_ref{*cq_tail_};
+  std::atomic_ref<std::uint32_t> tail_ref{*cq_tail_};
   std::uint32_t tail = tail_ref.load(std::memory_order_acquire);
 
   result.count_ = tail - result.head_;
@@ -457,7 +457,7 @@ std::error_code io_uring::submit() noexcept {
     needs_enter = true;
     enter_flags |= IORING_ENTER_GETEVENTS;
   } else {
-    std::atomic_ref<const volatile std::uint32_t> sq_flags_ref{*sq_flags_};
+    std::atomic_ref<std::uint32_t> sq_flags_ref{*sq_flags_};
     std::uint32_t sq_flags = sq_flags_ref.load(std::memory_order_relaxed);
     if ((sq_flags & (IORING_SQ_CQ_OVERFLOW | IORING_SQ_TASKRUN)) != 0) {
       needs_enter = true;
@@ -485,7 +485,7 @@ std::error_code io_uring::get_events() noexcept {
   const std::uint32_t enter_flags = IORING_ENTER_GETEVENTS;
   bool needs_enter = false;
   if ((setup_flags_ & IORING_SETUP_TASKRUN_FLAG) != 0) {
-    std::atomic_ref<const volatile std::uint32_t> sq_flags_ref{*sq_flags_};
+    std::atomic_ref<std::uint32_t> sq_flags_ref{*sq_flags_};
     std::uint32_t sq_flags = sq_flags_ref.load(std::memory_order_relaxed);
     if ((sq_flags & IORING_SQ_TASKRUN) != 0) {
       needs_enter = true;
@@ -755,7 +755,7 @@ std::uint32_t io_uring::compute_sq_wakeup_flag() const noexcept {
     // SQ polling enabled.
     std::atomic_thread_fence(std::memory_order_seq_cst);
 
-    std::atomic_ref<const volatile std::uint32_t> sq_flags_ref{*sq_flags_};
+    std::atomic_ref<std::uint32_t> sq_flags_ref{*sq_flags_};
     std::uint32_t sq_flags = sq_flags_ref.load(std::memory_order_relaxed);
     if ((sq_flags & IORING_SQ_NEED_WAKEUP) != 0) [[unlikely]] {
       return IORING_ENTER_SQ_WAKEUP;
