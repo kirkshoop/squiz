@@ -1,0 +1,30 @@
+# https://clangd.llvm.org/config
+
+# Apply a config conditionally to all C++ files
+If:
+  PathMatch: .*\.(c|h)pp$
+
+---
+
+# Tweak the clangd parse settings for all files
+CompileFlags:
+  CompilationDatabase: .
+  Add:
+    # report all errors
+    - "-ferror-limit=0"
+    - "-fmacro-backtrace-limit=0"
+    - "-ftemplate-backtrace-limit=0"
+    - "-DSQUIZ_CLANGD_INVOKED"
+  Remove:
+    - "-stdpar*"
+    # strip gcc's -fcoroutines
+    - -fcoroutines
+    - "-ftemplate-backtrace-limit"
+    - "-e1000"
+    - -Xtemplight
+    - -profiler
+    - -ignore-system
+    - "-fconcepts-diagnostics-depth=*"
+Diagnostics:
+  Suppress:
+    - "#warnings"
