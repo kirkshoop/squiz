@@ -264,16 +264,23 @@ TEST_CASE("iouring_context - openat/close") {
 
   auto sched = ctx.get_scheduler();
 
+  using namespace std::chrono_literals;
+
   auto result = squiz::sync_wait(
       squiz::let_value_sender{
           sched.openat(-1, "/dev/zero", O_RDONLY | O_CLOEXEC, 0),
           [sched](squiz::linuxos::detail::file_handle& file) noexcept {
-            std::puts("opened /dev/zero. closing...");
-            return squiz::then_sender{
-                squiz::unstoppable_sender(sched.close(file.release())),
-                [] noexcept {
-                  std::puts("closed");
-                }};
+                  std::puts("opened /dev/zero");
+                  return squiz::let_value_sender{
+                      sched.schedule_after(100ms),
+                      [sched, &file] noexcept {
+                        std::puts("closing /dev/zero...");
+                        return squiz::then_sender{
+                            squiz::unstoppable_sender(sched.close(file.release())),
+                            [] noexcept {
+                              std::puts("closed");
+                            }};
+                      }};
           }},
       ctx);
   CHECK(std::holds_alternative<std::tuple<squiz::value_tag>>(result));
@@ -293,17 +300,32 @@ TEST_CASE("iouring_context - openat/close cancellable") {
             squiz::let_value_sender{
                 sched.openat(-1, "/dev/zero", O_RDONLY | O_CLOEXEC, 0),
                 [sched](squiz::linuxos::detail::file_handle& file) noexcept {
-                  std::puts("opened /dev/zero. closing...");
-                  return squiz::then_sender{
-                      squiz::unstoppable_sender(sched.close(file.release())),
-                      [] noexcept {
-                        std::puts("closed");
+                  std::puts("opened /dev/zero");
+                  return squiz::let_stopped_sender{
+                      squiz::let_value_sender{
+                        sched.schedule_after(100ms),
+                        [sched, &file] noexcept {
+                          std::puts("closing /dev/zero - not stopped...");
+                          return squiz::then_sender{
+                              squiz::unstoppable_sender(sched.close(file.release())),
+                              [] noexcept {
+                                std::puts("closed - not stopped");
+                              }};
+                        }},
+                      [sched, &file] noexcept {
+                        std::puts("closing /dev/zero - stopped...");
+                        return squiz::let_value_sender{
+                            squiz::unstoppable_sender(sched.close(file.release())),
+                            [] noexcept {
+                              std::puts("closed - stopped");
+                              return squiz::just_stopped_sender{};
+                            }};
                       }};
-                }},
+                    }},
             squiz::then_sender{
-                sched.schedule_after(100ms),
+                sched.schedule_after(200ms),
                 [] noexcept {
-                  std::puts("timedout");
+                  std::puts("stop triggered");
                 }}},
         ctx);
     CHECK(std::holds_alternative<std::tuple<squiz::value_tag>>(result));
@@ -316,17 +338,32 @@ TEST_CASE("iouring_context - openat/close cancellable") {
             squiz::let_value_sender{
                 sched.openat(-1, "/dev/zero", O_RDONLY | O_CLOEXEC, 0),
                 [sched](squiz::linuxos::detail::file_handle& file) noexcept {
-                  std::puts("opened /dev/zero. closing...");
-                  return squiz::then_sender{
-                      squiz::unstoppable_sender(sched.close(file.release())),
-                      [] noexcept {
-                        std::puts("closed");
+                  std::puts("opened /dev/zero");
+                  return squiz::let_stopped_sender{
+                      squiz::let_value_sender{
+                        sched.schedule_after(200ms),
+                        [sched, &file] noexcept {
+                          std::puts("closing /dev/zero - not stopped...");
+                          return squiz::then_sender{
+                              squiz::unstoppable_sender(sched.close(file.release())),
+                              [] noexcept {
+                                std::puts("closed - not stopped");
+                              }};
+                        }},
+                      [sched, &file] noexcept {
+                        std::puts("closing /dev/zero - stopped...");
+                        return squiz::let_value_sender{
+                            squiz::unstoppable_sender(sched.close(file.release())),
+                            [] noexcept {
+                              std::puts("closed - stopped");
+                              return squiz::just_stopped_sender{};
+                            }};
                       }};
-                }},
+                    }},
             squiz::then_sender{
-                sched.schedule_after(0ms),
+                sched.schedule_after(100ms),
                 [] noexcept {
-                  std::puts("timedout");
+                  std::puts("stop triggered");
                 }}},
         ctx);
     CHECK(std::holds_alternative<std::tuple<squiz::stopped_tag>>(result));
