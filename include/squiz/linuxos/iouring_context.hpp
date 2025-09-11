@@ -479,7 +479,7 @@ public:
   void request_stop() noexcept {
     if (context_.is_on_io_thread()) {
       switch (state_) {
-        case state_t::remotely_enqeued:
+        case state_t::remotely_enqueued:
           context_.acquire_remote_items();
           [[fallthrough]];
         case state_t::locally_enqueued:
@@ -543,7 +543,7 @@ private:
 };
 
 //
-// iouring_context::scheudle_at_op_base
+// iouring_context::schedule_at_op_base
 //
 
 // Non-cancellable version
@@ -1131,7 +1131,7 @@ private:
       // just remove it from the queue and then complete with set_stopped().
       context_.waiting_for_sqes_queue_.remove(this);
     } else {
-      // Otherwise, we are in the case where the original start-opperation was
+      // Otherwise, we are in the case where the original start-operation was
       // enqueued remotely but was processed after the stop-request came in
       // and so the when_on_io_thread() callback just returned without
       // submitting the SQE with the idea that it would complete once the remote
