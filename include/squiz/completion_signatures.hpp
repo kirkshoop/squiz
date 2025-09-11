@@ -158,7 +158,19 @@ struct only_tags {
   template <typename Tag, typename... Args>
   static auto apply(result_t<Tag, Args...>) -> completion_signatures<>;
 };
+
+template <typename... Tags>
+struct except_tags {
+  template <typename Tag, typename... Args>
+  static auto apply(result_t<Tag, Args...>)
+      -> completion_signatures<result_t<Tag, Args...>>;
+
+  template <typename Tag, typename... Args>
+    requires one_of<Tag, Tags...>
+  static auto apply(result_t<Tag, Args...>) -> completion_signatures<>;
+};
 }  // namespace detail
+
 
 template <typename Sigs>
 using value_signatures_t =

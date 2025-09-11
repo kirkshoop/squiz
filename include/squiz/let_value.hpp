@@ -25,51 +25,51 @@
 
 namespace squiz {
 
-template <typename Source, typename BodyFactory, typename Receiver>
-class let_value_op;
+template <typename ResultTag, typename Source, typename BodyFactory, typename Receiver>
+class let_common_op;
 
-namespace let_value_detail {
+namespace let_common_detail {
 
-// let_value_transform_t<ValueSig, BodyFactory> -> BodySender
+// let_common_transform_t<ValueSig, BodyFactory> -> BodySender
 
 template <typename Sig, typename BodyFactory>
-struct let_value_transform {};
+struct let_common_transform {};
 
 template <typename... Vs, typename BodyFactory>
   requires std::invocable<BodyFactory, Vs&...>
-struct let_value_transform<value_t<Vs...>, BodyFactory> {
+struct let_common_transform<value_t<Vs...>, BodyFactory> {
   using type = std::invoke_result_t<BodyFactory, Vs&...>;
 };
 
 template <typename Sig, typename BodyFactory>
-using let_value_transform_t =
-    typename let_value_transform<Sig, BodyFactory>::type;
+using let_common_transform_t =
+    typename let_common_transform<Sig, BodyFactory>::type;
 
-// let_value_child_op<Source, BodyFactory, Receiver>
+// let_common_child_op<Source, BodyFactory, Receiver>
 // -> variant_child_operation for each of the child operation-states.
 
-template <typename Source, typename BodyFactory, typename Receiver>
-struct make_let_value_variant_child_operation {
+template <typename ResultTag, typename Source, typename BodyFactory, typename Receiver>
+struct make_let_common_variant_child_operation {
   template <typename... Sigs>
   using apply = variant_child_operation<
-      let_value_op<Source, BodyFactory, Receiver>,
+      let_common_op<ResultTag, Source, BodyFactory, Receiver>,
       receiver_env_t<Receiver>,
       indexed_source_tag,
       Source,
-      let_value_transform_t<Sigs, BodyFactory>...>;
+      let_common_transform_t<Sigs, BodyFactory>...>;
 };
 
-template <typename Source, typename BodyFactory, typename Receiver>
-using let_value_child_op = value_signatures_t<
+template <typename ResultTag, typename Source, typename BodyFactory, typename Receiver>
+using let_common_child_op = value_signatures_t<
     completion_signatures_for_t<Source, receiver_env_t<Receiver>>>::
     template apply<
-        make_let_value_variant_child_operation<Source, BodyFactory, Receiver>::
+        make_let_common_variant_child_operation<ResultTag, Source, BodyFactory, Receiver>::
             template apply>;
 
 // transform_body_signatures
 // - Can be passed to transform_completion_signatures_t to transform each of
 //   the completions of a body sender to the set of completions of the
-//   let_value operation. This basically just involves detecting whether any
+//   let_common operation. This basically just involves detecting whether any
 //   of the types are potentially throwing if we need to store the body result
 //   while we wait for a delegated concurrent stop-request to finish executing.
 struct transform_body_signatures {
@@ -84,7 +84,7 @@ struct transform_body_signatures {
                                                   error_t<std::exception_ptr>>;
 };
 
-template <typename BodyFactory, typename... Env>
+template <typename ResultTag, typename BodyFactory, typename... Env>
 struct transform_source_signatures {
 private:
   template <typename... Vs>
@@ -108,33 +108,33 @@ private:
 public:
   template <typename... Vs>
     requires std::invocable<BodyFactory, Vs&...>
-  static auto apply(value_t<Vs...>) -> body_completion_sigs_t<Vs...>;
+  static auto apply(result_t<ResultTag, Vs...>) -> body_completion_sigs_t<Vs...>;
 
   template <typename Tag, typename... Datums>
   static auto apply(result_t<Tag, Datums...>)
       -> completion_signatures<result_t<Tag, Datums...>>;
 };
 
-template <typename Source, typename BodyFactory, typename... Env>
-using let_value_completion_signatures = merge_completion_signatures_t<
+template <typename ResultTag, typename Source, typename BodyFactory, typename... Env>
+using let_common_completion_signatures = merge_completion_signatures_t<
     completion_signatures<stopped_t>,
-    error_or_stopped_signatures_t<completion_signatures_for_t<Source, Env...>>,
+    transform_completion_signatures_t<completion_signatures_for_t<Source, Env...>, detail::except_tags<ResultTag>>,
     transform_completion_signatures_t<
-        value_signatures_t<completion_signatures_for_t<Source, Env...>>,
-        transform_source_signatures<BodyFactory, Env...>>>;
+        transform_completion_signatures_t<completion_signatures_for_t<Source, Env...>, detail::only_tags<ResultTag>>,
+        transform_source_signatures<ResultTag, BodyFactory, Env...>>>;
 
-}  // namespace let_value_detail
+}  // namespace let_common_detail
 
-template <typename Source, typename BodyFactory, typename Receiver>
-class let_value_op final
+template <typename ResultTag, typename Source, typename BodyFactory, typename Receiver>
+class let_common_op final
   : public inlinable_operation_state<
-        let_value_op<Source, BodyFactory, Receiver>,
+        let_common_op<ResultTag, Source, BodyFactory, Receiver>,
         Receiver>
-  , public let_value_detail::let_value_child_op<Source, BodyFactory, Receiver> {
+  , public let_common_detail::let_common_child_op<ResultTag, Source, BodyFactory, Receiver> {
 private:
-  using inlinable_base = inlinable_operation_state<let_value_op, Receiver>;
+  using inlinable_base = inlinable_operation_state<let_common_op, Receiver>;
   using child_base =
-      let_value_detail::let_value_child_op<Source, BodyFactory, Receiver>;
+      let_common_detail::let_common_child_op<ResultTag, Source, BodyFactory, Receiver>;
 
   using state_t = std::uint8_t;
 
@@ -146,7 +146,7 @@ private:
 
 public:
   template <typename BodyFactory2>
-  let_value_op(Source&& source, BodyFactory2&& factory, Receiver receiver) noexcept(
+  let_common_op(Source&& source, BodyFactory2&& factory, Receiver receiver) noexcept(
       child_base::template is_nothrow_constructible<0> &&
       std::is_nothrow_constructible_v<BodyFactory, BodyFactory2>)
     : inlinable_base(std::move(receiver))
@@ -154,7 +154,7 @@ public:
     child_base::template construct<0>(std::forward<Source>(source));
   }
 
-  ~let_value_op() {
+  ~let_common_op() {
     if (child_index_ != empty_child_index) {
       child_base::destruct(child_index_);
     }
@@ -221,7 +221,7 @@ public:
   template <typename... Vs>
   void set_result(
       indexed_source_tag<0>,
-      value_t<Vs...>,
+      result_t<ResultTag, Vs...>,
       parameter_type<Vs>... vs) noexcept {
     using next_sender_t = std::invoke_result_t<BodyFactory, Vs&...>;
     constexpr std::size_t sender_index =
@@ -237,23 +237,25 @@ public:
         state_.fetch_add(src_done_flag, std::memory_order_relaxed);
     assert((old_state & stage_mask) == 0);
 
-    if ((old_state & stop_requested_flag) != 0) {
-      // stop was requested - discard the result and complete with
-      // set_stopped().
-      squiz::set_stopped(this->get_receiver());
-      return;
+    if constexpr (one_of<ResultTag, value_tag, error_tag>) {
+      if ((old_state & stop_requested_flag) != 0) {
+        // stop was requested - discard the result and complete with
+        // set_stopped().
+        squiz::set_stopped(this->get_receiver());
+        return;
+      }
     }
 
     try {
       auto& value_tuple =
-          value_storage_.template emplace<std::tuple<value_tag, Vs...>>(
-              value_tag{}, squiz::forward_parameter<Vs>(vs)...);
+          source_result_storage_.template emplace<std::tuple<ResultTag, Vs...>>(
+              ResultTag{}, squiz::forward_parameter<Vs>(vs)...);
 
       child_base::template destruct<0>();
       child_index_ = empty_child_index;
 
       std::apply(
-          [&](value_tag, Vs&... stored_vs) {
+          [&](ResultTag, Vs&... stored_vs) {
             child_base::template construct<sender_index>(
                 std::invoke(std::move(factory_), stored_vs...));
             child_index_ = sender_index;
@@ -265,7 +267,7 @@ public:
       // Only instantiate the call to set_error() if it is potentially-throwing.
       if constexpr (!is_nothrow) {
         // Make sure the value is destroyed first.
-        value_storage_.template emplace<0>();
+        source_result_storage_.template emplace<0>();
         squiz::set_error<std::exception_ptr>(
             this->get_receiver(), std::current_exception());
         return;
@@ -299,7 +301,8 @@ public:
     }
   }
 
-  template <one_of<stopped_tag, error_tag> Tag, typename... Datums>
+  template <one_of<stopped_tag, error_tag, value_tag> Tag, typename... Datums>
+    requires (!std::same_as<ResultTag, Tag>)
   void set_result(
       indexed_source_tag<0>,
       result_t<Tag, Datums...> sig,
@@ -395,14 +398,15 @@ public:
 private:
   using source_completion_sigs_t =
       completion_signatures_for_t<Source, receiver_env_t<Receiver>>;
-  using source_value_sigs_t = value_signatures_t<source_completion_sigs_t>;
+  using source_result_tag_sigs_t = transform_completion_signatures_t<
+      source_completion_sigs_t, detail::only_tags<ResultTag>>;
   using body_completion_sigs_t = transform_completion_signatures_t<
-      source_value_sigs_t,
-      let_value_detail::
-          transform_source_signatures<BodyFactory, receiver_env_t<Receiver>>>;
+      source_result_tag_sigs_t,
+      let_common_detail::
+          transform_source_signatures<ResultTag, BodyFactory, receiver_env_t<Receiver>>>;
 
-  using value_variant_t =
-      detail::completion_signatures_to_variant_of_tuple_t<source_value_sigs_t>;
+  using source_result_tag_variant_t =
+      detail::completion_signatures_to_variant_of_tuple_t<source_result_tag_sigs_t>;
 
   using result_variant_t = detail::completion_signatures_to_variant_of_tuple_t<
       body_completion_sigs_t>;
@@ -420,7 +424,7 @@ private:
   std::atomic<state_t> state_{0};
   child_index_t child_index_{0};
   [[no_unique_address]] BodyFactory factory_;
-  [[no_unique_address]] value_variant_t value_storage_;
+  [[no_unique_address]] source_result_tag_variant_t source_result_storage_;
   [[no_unique_address]] result_variant_t result_storage_;
 };
 
@@ -431,8 +435,8 @@ struct let_value_sender {
 
   template <typename Self, typename... Env>
   auto get_completion_signatures(this Self&&, Env...)
-      -> let_value_detail::
-          let_value_completion_signatures<Source, BodyFactory, Env...>;
+      -> let_common_detail::
+          let_common_completion_signatures<value_tag, Source, BodyFactory, Env...>;
 
   template <typename Self, typename... Env>
   auto is_always_nothrow_connectable(this Self&&, Env...)
@@ -445,17 +449,19 @@ struct let_value_sender {
                detail::member_type_t<Self, BodyFactory>>)>;
 
   template <typename Self, typename Receiver>
-  let_value_op<detail::member_type_t<Self, Source>, BodyFactory, Receiver>
+  let_common_op<value_tag, detail::member_type_t<Self, Source>, BodyFactory, Receiver>
   connect(this Self&& self, Receiver r) noexcept(
       std::is_nothrow_constructible_v<
-          let_value_op<
+          let_common_op<
+              value_tag,
               detail::member_type_t<Self, Source>,
               BodyFactory,
               Receiver>,
           detail::member_type_t<Self, Source>,
           detail::member_type_t<Self, BodyFactory>,
           Receiver>) {
-    return let_value_op<
+    return let_common_op<
+        value_tag,
         detail::member_type_t<Self, Source>,
         BodyFactory,
         Receiver>{
@@ -470,5 +476,104 @@ let_value_sender(Source, BodyFactory) -> let_value_sender<Source, BodyFactory>;
 
 template <typename Source, typename BodyFactory>
 using let_value = let_value_sender<Source, BodyFactory>;
+
+
+template <typename Source, typename BodyFactory>
+struct let_error_sender {
+  Source source;
+  BodyFactory body_factory;
+
+  template <typename Self, typename... Env>
+  auto get_completion_signatures(this Self&&, Env...)
+      -> let_common_detail::
+          let_common_completion_signatures<error_tag, Source, BodyFactory, Env...>;
+
+  template <typename Self, typename... Env>
+  auto is_always_nothrow_connectable(this Self&&, Env...)
+      -> std::bool_constant<
+          (squiz::is_always_nothrow_connectable_v<
+               detail::member_type_t<Self, Source>,
+               Env...> &&
+           std::is_nothrow_constructible_v<
+               BodyFactory,
+               detail::member_type_t<Self, BodyFactory>>)>;
+
+  template <typename Self, typename Receiver>
+  let_common_op<error_tag, detail::member_type_t<Self, Source>, BodyFactory, Receiver>
+  connect(this Self&& self, Receiver r) noexcept(
+      std::is_nothrow_constructible_v<
+          let_common_op<
+              error_tag,
+              detail::member_type_t<Self, Source>,
+              BodyFactory,
+              Receiver>,
+          detail::member_type_t<Self, Source>,
+          detail::member_type_t<Self, BodyFactory>,
+          Receiver>) {
+    return let_common_op<
+        error_tag,
+        detail::member_type_t<Self, Source>,
+        BodyFactory,
+        Receiver>{
+        std::forward<Self>(self).source,
+        std::forward<Self>(self).body_factory,
+        std::move(r)};
+  }
+};
+
+template <typename Source, typename BodyFactory>
+let_error_sender(Source, BodyFactory) -> let_error_sender<Source, BodyFactory>;
+
+template <typename Source, typename BodyFactory>
+using let_error = let_error_sender<Source, BodyFactory>;
+
+template <typename Source, typename BodyFactory>
+struct let_stopped_sender {
+  Source source;
+  BodyFactory body_factory;
+
+  template <typename Self, typename... Env>
+  auto get_completion_signatures(this Self&&, Env...)
+      -> let_common_detail::
+          let_common_completion_signatures<stopped_tag, Source, BodyFactory, Env...>;
+
+  template <typename Self, typename... Env>
+  auto is_always_nothrow_connectable(this Self&&, Env...)
+      -> std::bool_constant<
+          (squiz::is_always_nothrow_connectable_v<
+               detail::member_type_t<Self, Source>,
+               Env...> &&
+           std::is_nothrow_constructible_v<
+               BodyFactory,
+               detail::member_type_t<Self, BodyFactory>>)>;
+
+  template <typename Self, typename Receiver>
+  let_common_op<stopped_tag, detail::member_type_t<Self, Source>, BodyFactory, Receiver>
+  connect(this Self&& self, Receiver r) noexcept(
+      std::is_nothrow_constructible_v<
+          let_common_op<
+              stopped_tag,
+              detail::member_type_t<Self, Source>,
+              BodyFactory,
+              Receiver>,
+          detail::member_type_t<Self, Source>,
+          detail::member_type_t<Self, BodyFactory>,
+          Receiver>) {
+    return let_common_op<
+        stopped_tag,
+        detail::member_type_t<Self, Source>,
+        BodyFactory,
+        Receiver>{
+        std::forward<Self>(self).source,
+        std::forward<Self>(self).body_factory,
+        std::move(r)};
+  }
+};
+
+template <typename Source, typename BodyFactory>
+let_stopped_sender(Source, BodyFactory) -> let_stopped_sender<Source, BodyFactory>;
+
+template <typename Source, typename BodyFactory>
+using let_stopped = let_stopped_sender<Source, BodyFactory>;
 
 }  // namespace squiz
