@@ -1,11 +1,5 @@
 # https://clangd.llvm.org/config
 
-# Apply a config conditionally to all C++ files
-If:
-  PathMatch: .*\.(c|h)pp$
-
----
-
 # Tweak the clangd parse settings for all files
 CompileFlags:
   CompilationDatabase: .

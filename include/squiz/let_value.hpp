@@ -30,20 +30,20 @@ class let_common_op;
 
 namespace let_common_detail {
 
-// let_common_transform_t<ValueSig, BodyFactory> -> BodySender
+// let_common_transform_t<ResultTag, Sig, BodyFactory> -> BodySender
 
-template <typename Sig, typename BodyFactory>
-struct let_common_transform {};
+template<typename ResultTag, typename Sig, typename BodyFactory>  
+struct let_common_transform {};  
 
-template <typename... Vs, typename BodyFactory>
-  requires std::invocable<BodyFactory, Vs&...>
-struct let_common_transform<value_t<Vs...>, BodyFactory> {
-  using type = std::invoke_result_t<BodyFactory, Vs&...>;
-};
+template<typename ResultTag, typename... Datums, typename BodyFactory>  
+  requires std::invocable<BodyFactory, Datums&...>  
+struct let_common_transform<ResultTag, result_t<ResultTag, Datums...>, BodyFactory> {  
+  using type = std::invoke_result_t<BodyFactory, Datums&...>;  
+};  
 
-template <typename Sig, typename BodyFactory>
-using let_common_transform_t =
-    typename let_common_transform<Sig, BodyFactory>::type;
+template<typename ResultTag, typename Sig, typename BodyFactory>  
+using let_common_transform_t =  
+  typename let_common_transform<ResultTag, Sig, BodyFactory>::type;  
 
 // let_common_child_op<Source, BodyFactory, Receiver>
 // -> variant_child_operation for each of the child operation-states.
@@ -56,12 +56,12 @@ struct make_let_common_variant_child_operation {
       receiver_env_t<Receiver>,
       indexed_source_tag,
       Source,
-      let_common_transform_t<Sigs, BodyFactory>...>;
+      let_common_transform_t<ResultTag, Sigs, BodyFactory>...>;
 };
 
 template <typename ResultTag, typename Source, typename BodyFactory, typename Receiver>
-using let_common_child_op = value_signatures_t<
-    completion_signatures_for_t<Source, receiver_env_t<Receiver>>>::
+using let_common_child_op = transform_completion_signatures_t<
+    completion_signatures_for_t<Source, receiver_env_t<Receiver>>, detail::only_tags<ResultTag>>::
     template apply<
         make_let_common_variant_child_operation<ResultTag, Source, BodyFactory, Receiver>::
             template apply>;
@@ -87,28 +87,28 @@ struct transform_body_signatures {
 template <typename ResultTag, typename BodyFactory, typename... Env>
 struct transform_source_signatures {
 private:
-  template <typename... Vs>
+  template <typename... Datums>
   static constexpr bool is_body_sender_nothrow_startable =
-      (std::is_nothrow_move_constructible_v<Vs> && ...) &&
-      std::is_nothrow_invocable_v<BodyFactory, Vs&...> &&
+      (std::is_nothrow_move_constructible_v<Datums> && ...) &&
+      std::is_nothrow_invocable_v<BodyFactory, Datums&...> &&
       squiz::is_always_nothrow_connectable_v<
-          std::invoke_result_t<BodyFactory, Vs&...>,
+          std::invoke_result_t<BodyFactory, Datums&...>,
           Env...>;
 
-  template <typename... Vs>
+  template <typename... Datums>
   using body_completion_sigs_t = merge_completion_signatures_t<
       detail::add_error_if_move_can_throw_t<completion_signatures_for_t<
-          std::invoke_result_t<BodyFactory, Vs&...>,
+          std::invoke_result_t<BodyFactory, Datums&...>,
           Env...>>,
       std::conditional_t<
-          is_body_sender_nothrow_startable<Vs...>,
+          is_body_sender_nothrow_startable<Datums...>,
           completion_signatures<>,
           completion_signatures<error_t<std::exception_ptr>>>>;
 
 public:
-  template <typename... Vs>
-    requires std::invocable<BodyFactory, Vs&...>
-  static auto apply(result_t<ResultTag, Vs...>) -> body_completion_sigs_t<Vs...>;
+  template <typename... Datums>
+    requires std::invocable<BodyFactory, Datums&...>
+  static auto apply(result_t<ResultTag, Datums...>) -> body_completion_sigs_t<Datums...>;
 
   template <typename Tag, typename... Datums>
   static auto apply(result_t<Tag, Datums...>)
@@ -218,17 +218,17 @@ public:
     }
   }
 
-  template <typename... Vs>
+  template <typename... Datums>
   void set_result(
       indexed_source_tag<0>,
-      result_t<ResultTag, Vs...>,
-      parameter_type<Vs>... vs) noexcept {
-    using next_sender_t = std::invoke_result_t<BodyFactory, Vs&...>;
+      result_t<ResultTag, Datums...>,
+      parameter_type<Datums>... datums) noexcept {
+    using next_sender_t = std::invoke_result_t<BodyFactory, Datums&...>;
     constexpr std::size_t sender_index =
         child_base::template sender_index<next_sender_t>;
     constexpr bool is_nothrow =
-        (std::is_nothrow_move_constructible_v<Vs> && ...) &&
-        std::is_nothrow_invocable_v<BodyFactory, Vs&...> &&
+        (std::is_nothrow_move_constructible_v<Datums> && ...) &&
+        std::is_nothrow_invocable_v<BodyFactory, Datums&...> &&
         child_base::template is_nothrow_constructible<sender_index>;
 
     // The fetch_add(stop_request_done_flag, release) in request_stop()
@@ -237,30 +237,21 @@ public:
         state_.fetch_add(src_done_flag, std::memory_order_relaxed);
     assert((old_state & stage_mask) == 0);
 
-    if constexpr (one_of<ResultTag, value_tag, error_tag>) {
-      if ((old_state & stop_requested_flag) != 0) {
-        // stop was requested - discard the result and complete with
-        // set_stopped().
-        squiz::set_stopped(this->get_receiver());
-        return;
-      }
-    }
-
     try {
-      auto& value_tuple =
-          source_result_storage_.template emplace<std::tuple<ResultTag, Vs...>>(
-              ResultTag{}, squiz::forward_parameter<Vs>(vs)...);
+      auto& result_tuple =
+          source_result_storage_.template emplace<std::tuple<ResultTag, Datums...>>(
+              ResultTag{}, squiz::forward_parameter<Datums>(datums)...);
 
       child_base::template destruct<0>();
       child_index_ = empty_child_index;
 
       std::apply(
-          [&](ResultTag, Vs&... stored_vs) {
+          [&](ResultTag, Datums&... stored_datums) {
             child_base::template construct<sender_index>(
-                std::invoke(std::move(factory_), stored_vs...));
+                std::invoke(std::move(factory_), stored_datums...));
             child_index_ = sender_index;
           },
-          value_tuple);
+          result_tuple);
 
       child_base::template start<sender_index>();
     } catch (...) {

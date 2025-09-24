@@ -408,6 +408,7 @@ private:
   std::uint32_t sqe_tail_;
   io_uring_sqe* sq_entries_;
   std::uint32_t* sq_index_array_;
+  // TODO: once libc++ supports https://wg21.link/p3323 - reintroduce volatile appropriately
   std::uint32_t* sq_head_;
   std::uint32_t* sq_tail_;
   std::uint32_t* sq_flags_;
